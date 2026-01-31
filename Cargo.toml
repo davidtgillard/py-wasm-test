@@ -1,0 +1,11 @@
+[package]
+name = "py-wasm-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wasmtime = "41.0.0"
+wasmtime-wasi = "41.0.0"
+
+# Wasmtime P2 often requires a small runtime for its internal sync implementation
+tokio = { version = "1", features = ["full"] } 
