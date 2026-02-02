@@ -1,0 +1,9 @@
+package example:calc;
+
+world adder {
+    record add-result {
+        length: u32,
+        data: list<u8>,
+    }
+    export add: func(data: list<u8>) -> add-result;
+}
