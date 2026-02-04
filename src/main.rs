@@ -34,9 +34,17 @@ fn main() -> Result<()> {
 
     let adder = Adder::instantiate(&mut store, &component, &linker)?;
 
-    let bytes = b"hello, component";
+    let bytes = b"";
+    //let bytes = b"hello, component";
     let result = adder.call_add(&mut store, bytes)?;
-    println!("length: {}, data: {:?}", result.length, result.data);
+    match result {
+        AddResultOrError::Ok(ok) => {
+            println!("length: {}, data: {:?}", ok.length, ok.data);
+        }
+        AddResultOrError::Err(msg) => {
+            eprintln!("error: {}", msg);
+        }
+    }
 
     Ok(())
 }

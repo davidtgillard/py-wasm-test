@@ -5,5 +5,9 @@ world adder {
         length: u32,
         data: list<u8>,
     }
-    export add: func(data: list<u8>) -> add-result;
+    variant add-result-or-error {
+        ok(add-result),
+        err(string),
+    }
+    export add: func(data: list<u8>) -> add-result-or-error;
 }
