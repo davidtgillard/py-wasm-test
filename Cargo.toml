@@ -8,4 +8,8 @@ wasmtime = "41.0.0"
 wasmtime-wasi = "41.0.0"
 
 # Wasmtime P2 often requires a small runtime for its internal sync implementation
-tokio = { version = "1", features = ["full"] } 
+tokio = { version = "1", features = ["full"] }
+
+# Programmatic Python→Wasm component build (not on crates.io)
+componentize-py = { git = "https://github.com/bytecodealliance/componentize-py" }
+tempfile = "3" 
