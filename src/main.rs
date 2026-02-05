@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
 use wasmtime::component::{bindgen, Component};
@@ -21,6 +22,68 @@ impl WasiView for MyState {
             table: &mut self.table,
         }
     }
+}
+
+fn cache_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".component_cache")
+}
+
+fn cache_component_path(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("adder.component.wasm")
+}
+
+fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
+    cache_dir.join(".fingerprint")
+}
+
+/// Collect paths that affect the component: adder.wit, app.py, and wit_world/** (skip __pycache__, .pyc).
+fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    let wit = project_root.join("adder.wit");
+    let app = project_root.join("app.py");
+    if wit.exists() {
+        paths.push(wit);
+    }
+    if app.exists() {
+        paths.push(app);
+    }
+    let wit_world_dir = project_root.join("wit_world");
+    if wit_world_dir.is_dir() {
+        for entry in fs::read_dir(&wit_world_dir)? {
+            let entry = entry?;
+            let p = entry.path();
+            if p.file_name().and_then(|n| n.to_str()) == Some("__pycache__") {
+                continue;
+            }
+            if p.extension().and_then(|e| e.to_str()) == Some("pyc") {
+                continue;
+            }
+            if p.is_dir() {
+                for sub in fs::read_dir(&p)? {
+                    let sub = sub?;
+                    paths.push(sub.path());
+                }
+            } else {
+                paths.push(p);
+            }
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+/// Content-based fingerprint of inputs (adder.wit, app.py, wit_world/**). Returns hex string.
+fn compute_component_fingerprint(project_root: &Path) -> Result<String> {
+    let paths = component_input_paths(project_root)?;
+    let mut hasher = blake3::Hasher::new();
+    for path in paths {
+        let contents = fs::read(&path)?;
+        let file_hash = blake3::hash(&contents);
+        let path_str = path.to_string_lossy();
+        hasher.update(path_str.as_bytes());
+        hasher.update(file_hash.as_bytes());
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// Build the Python→Wasm component programmatically using componentize-py.
@@ -62,6 +125,37 @@ async fn build_component_async(project_root: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Load component from cache if fingerprint matches; otherwise build and write cache.
+/// Set PY_WASM_REBUILD=1 to force rebuild and refresh cache.
+async fn get_or_build_component(project_root: &Path) -> Result<Vec<u8>> {
+    let force_rebuild = std::env::var("PY_WASM_REBUILD")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let fingerprint = compute_component_fingerprint(project_root)?;
+    let cache_dir = cache_dir(project_root);
+    let component_path = cache_component_path(&cache_dir);
+    let fingerprint_path = cache_fingerprint_path(&cache_dir);
+
+    if !force_rebuild
+        && fingerprint_path.exists()
+        && component_path.exists()
+    {
+        let cached = fs::read_to_string(&fingerprint_path).ok();
+        if cached.as_deref() == Some(fingerprint.as_str()) {
+            if let Ok(bytes) = fs::read(&component_path) {
+                return Ok(bytes);
+            }
+        }
+    }
+
+    let bytes = build_component_async(project_root).await?;
+    fs::create_dir_all(&cache_dir)?;
+    fs::write(&component_path, &bytes)?;
+    fs::write(&fingerprint_path, &fingerprint)?;
+    Ok(bytes)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut config = Config::new();
@@ -80,7 +174,7 @@ async fn main() -> Result<()> {
     );
 
     let project_root = std::env::current_dir()?;
-    let component_bytes = build_component_async(&project_root).await?;
+    let component_bytes = get_or_build_component(&project_root).await?;
     let component = Component::new(&engine, &component_bytes)?;
 
     let adder = Adder::instantiate(&mut store, &component, &linker)?;
