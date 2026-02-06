@@ -36,6 +36,10 @@ fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
     cache_dir.join(".fingerprint")
 }
 
+fn cache_precompiled_path(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("adder.precompiled")
+}
+
 /// Collect paths that affect the component: adder.wit, app.py, and wit_world/** (skip __pycache__, .pyc).
 fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
@@ -175,7 +179,46 @@ async fn main() -> Result<()> {
 
     let project_root = std::env::current_dir()?;
     let component_bytes = get_or_build_component(&project_root).await?;
-    let component = Component::new(&engine, &component_bytes)?;
+
+    let force_rebuild = std::env::var("PY_WASM_REBUILD")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let fingerprint = compute_component_fingerprint(&project_root)?;
+    let cache_dir = cache_dir(&project_root);
+    let fingerprint_path = cache_fingerprint_path(&cache_dir);
+    let precompiled_path = cache_precompiled_path(&cache_dir);
+
+    let component = {
+        let try_precompiled = !force_rebuild
+            && fingerprint_path.exists()
+            && precompiled_path.exists()
+            && fs::read_to_string(&fingerprint_path).ok().as_deref() == Some(fingerprint.as_str());
+
+        if try_precompiled {
+            if let Ok(precompiled_bytes) = fs::read(&precompiled_path) {
+                // SAFETY: Bytes were produced by Component::serialize() from this binary
+                // with the same Engine config; we do not modify them.
+                if let Ok(c) = unsafe { Component::deserialize(&engine, &precompiled_bytes) } {
+                    c
+                } else {
+                    let c = Component::new(&engine, &component_bytes)?;
+                    fs::create_dir_all(&cache_dir)?;
+                    let _ = fs::write(&precompiled_path, &c.serialize()?);
+                    c
+                }
+            } else {
+                let c = Component::new(&engine, &component_bytes)?;
+                fs::create_dir_all(&cache_dir)?;
+                let _ = fs::write(&precompiled_path, &c.serialize()?);
+                c
+            }
+        } else {
+            let c = Component::new(&engine, &component_bytes)?;
+            fs::create_dir_all(&cache_dir)?;
+            let _ = fs::write(&precompiled_path, &c.serialize()?);
+            c
+        }
+    };
 
     let adder = Adder::instantiate(&mut store, &component, &linker)?;
 
