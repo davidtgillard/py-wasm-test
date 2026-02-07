@@ -1,0 +1,13 @@
+package example:calc;
+
+world length-calc {
+    record length-calc-result {
+        length: u32,
+        data: list<u8>,
+    }
+    variant length-calc-result-or-error {
+        ok(length-calc-result),
+        err(string),
+    }
+    export length-calc: func(data: list<u8>) -> length-calc-result-or-error;
+}

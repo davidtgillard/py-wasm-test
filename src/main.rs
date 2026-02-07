@@ -8,7 +8,14 @@ use wasmtime::component::{bindgen, Component};
 use wasmtime::{Config, Engine, Result, Store};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
-// 1. Generate bindings from the WIT file
+/// Component/world name (module and directory name; WIT file is COMPONENT_NAME.wit).
+const COMPONENT_NAME: &str = "length_calc";
+/// World name as in the WIT file (kebab-case). Must match the `world` definition in the .wit file.
+const WORLD_NAME_WIT: &str = "length-calc";
+/// Python entry module name (entry point is APP_NAME.py).
+const APP_NAME: &str = "app";
+
+// 1. Generate bindings from the WIT file (world name must match WIT; file = COMPONENT_NAME.wit)
 bindgen!("length-calc" in "length_calc.wit");
 
 struct MyState {
@@ -29,7 +36,7 @@ fn cache_dir(project_root: &Path) -> PathBuf {
 }
 
 fn cache_component_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join("length_calc.component.wasm")
+    cache_dir.join(format!("{}.component.wasm", COMPONENT_NAME))
 }
 
 fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
@@ -37,23 +44,23 @@ fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
 }
 
 fn cache_precompiled_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join("length_calc.precompiled")
+    cache_dir.join(format!("{}.precompiled", COMPONENT_NAME))
 }
 
-/// Collect paths that affect the component: length_calc.wit, app.py, and length_calc/** (skip __pycache__, .pyc).
+/// Collect paths that affect the component: COMPONENT_NAME.wit, APP_NAME.py, and COMPONENT_NAME/** (skip __pycache__, .pyc).
 fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    let wit = project_root.join("length_calc.wit");
-    let app = project_root.join("app.py");
+    let wit = project_root.join(format!("{}.wit", COMPONENT_NAME));
+    let app = project_root.join(format!("{}.py", APP_NAME));
     if wit.exists() {
         paths.push(wit);
     }
     if app.exists() {
         paths.push(app);
     }
-    let length_calc_dir = project_root.join("length_calc");
-    if length_calc_dir.is_dir() {
-        for entry in fs::read_dir(&length_calc_dir)? {
+    let component_dir = project_root.join(COMPONENT_NAME);
+    if component_dir.is_dir() {
+        for entry in fs::read_dir(&component_dir)? {
             let entry = entry?;
             let p = entry.path();
             if p.file_name().and_then(|n| n.to_str()) == Some("__pycache__") {
@@ -76,7 +83,7 @@ fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// Content-based fingerprint of inputs (length_calc.wit, app.py, length_calc/**). Returns hex string.
+/// Content-based fingerprint of inputs (COMPONENT_NAME.wit, APP_NAME.py, COMPONENT_NAME/**). Returns hex string.
 fn compute_component_fingerprint(project_root: &Path) -> Result<String> {
     let paths = component_input_paths(project_root)?;
     let mut hasher = blake3::Hasher::new();
@@ -91,16 +98,16 @@ fn compute_component_fingerprint(project_root: &Path) -> Result<String> {
 }
 
 /// Build the Python→Wasm component programmatically using componentize-py.
-/// `project_root` must be the directory containing length_calc.wit, length_calc.py, length_calc/, etc.
+/// `project_root` must be the directory containing COMPONENT_NAME.wit, APP_NAME.py, COMPONENT_NAME/, etc.
 async fn build_component_async(project_root: &Path) -> Result<Vec<u8>> {
     let wit_path = [project_root];
-    let world = Some("length-calc");
+    let world = Some(WORLD_NAME_WIT);
     let features: &[String] = &[];
     let all_features = false;
-    let world_module: Option<&str> = Some("length_calc");
+    let world_module: Option<&str> = Some(COMPONENT_NAME);
     let python_path = [project_root.to_str().expect("project root is valid UTF-8")];
     let module_worlds: &[(&str, &str)] = &[];
-    let app_name = "app";
+    let app_name = APP_NAME;
     let tmp = NamedTempFile::new()?;
     let output_path = tmp.path();
     let stub_wasi = false;
