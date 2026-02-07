@@ -9,7 +9,7 @@ use wasmtime::{Config, Engine, Result, Store};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 // 1. Generate bindings from the WIT file
-bindgen!("adder" in "adder.wit");
+bindgen!("length-calc" in "length_calc.wit");
 
 struct MyState {
     ctx: WasiCtx,
@@ -29,7 +29,7 @@ fn cache_dir(project_root: &Path) -> PathBuf {
 }
 
 fn cache_component_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join("adder.component.wasm")
+    cache_dir.join("length_calc.component.wasm")
 }
 
 fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
@@ -37,13 +37,13 @@ fn cache_fingerprint_path(cache_dir: &Path) -> PathBuf {
 }
 
 fn cache_precompiled_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join("adder.precompiled")
+    cache_dir.join("length_calc.precompiled")
 }
 
-/// Collect paths that affect the component: adder.wit, app.py, and wit_world/** (skip __pycache__, .pyc).
+/// Collect paths that affect the component: length_calc.wit, app.py, and length_calc/** (skip __pycache__, .pyc).
 fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    let wit = project_root.join("adder.wit");
+    let wit = project_root.join("length_calc.wit");
     let app = project_root.join("app.py");
     if wit.exists() {
         paths.push(wit);
@@ -51,9 +51,9 @@ fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     if app.exists() {
         paths.push(app);
     }
-    let wit_world_dir = project_root.join("wit_world");
-    if wit_world_dir.is_dir() {
-        for entry in fs::read_dir(&wit_world_dir)? {
+    let length_calc_dir = project_root.join("length_calc");
+    if length_calc_dir.is_dir() {
+        for entry in fs::read_dir(&length_calc_dir)? {
             let entry = entry?;
             let p = entry.path();
             if p.file_name().and_then(|n| n.to_str()) == Some("__pycache__") {
@@ -76,7 +76,7 @@ fn component_input_paths(project_root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// Content-based fingerprint of inputs (adder.wit, app.py, wit_world/**). Returns hex string.
+/// Content-based fingerprint of inputs (length_calc.wit, app.py, length_calc/**). Returns hex string.
 fn compute_component_fingerprint(project_root: &Path) -> Result<String> {
     let paths = component_input_paths(project_root)?;
     let mut hasher = blake3::Hasher::new();
@@ -91,13 +91,13 @@ fn compute_component_fingerprint(project_root: &Path) -> Result<String> {
 }
 
 /// Build the Python→Wasm component programmatically using componentize-py.
-/// `project_root` must be the directory containing adder.wit, app.py, wit_world/, etc.
+/// `project_root` must be the directory containing length_calc.wit, length_calc.py, length_calc/, etc.
 async fn build_component_async(project_root: &Path) -> Result<Vec<u8>> {
     let wit_path = [project_root];
-    let world = Some("adder");
+    let world = Some("length-calc");
     let features: &[String] = &[];
     let all_features = false;
-    let world_module: Option<&str> = None;
+    let world_module: Option<&str> = Some("length_calc");
     let python_path = [project_root.to_str().expect("project root is valid UTF-8")];
     let module_worlds: &[(&str, &str)] = &[];
     let app_name = "app";
@@ -220,16 +220,16 @@ async fn main() -> Result<()> {
         }
     };
 
-    let adder = Adder::instantiate(&mut store, &component, &linker)?;
+    let length_calc = LengthCalc::instantiate(&mut store, &component, &linker)?;
 
     //let bytes = b"";
     let bytes = b"hello, component";
-    let result = adder.call_add(&mut store, bytes)?;
+    let result = length_calc.call_length_calc(&mut store, bytes)?;
     match result {
-        AddResultOrError::Ok(ok) => {
+        LengthCalcResultOrError::Ok(ok) => {
             println!("length: {}, data: {:?}", ok.length, ok.data);
         }
-        AddResultOrError::Err(msg) => {
+        LengthCalcResultOrError::Err(msg) => {
             eprintln!("error: {}", msg);
         }
     }

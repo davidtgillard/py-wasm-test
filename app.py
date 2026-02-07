@@ -1,10 +1,10 @@
-import wit_world
+import length_calc
 
 
-class WitWorld(wit_world.WitWorld):
-    def add(self, data: bytes) -> wit_world.AddResultOrError:
+class LengthCalc(length_calc.LengthCalc):
+    def length_calc(self, data: bytes) -> length_calc.LengthCalcResultOrError:
         if len(data) == 0:
-            return wit_world.AddResultOrError_Err(value="empty input")
-        return wit_world.AddResultOrError_Ok(
-            value=wit_world.AddResult(length=len(data), data=bytes(data))
+            return length_calc.LengthCalcResultOrError_Err(value="empty input")
+        return length_calc.LengthCalcResultOrError_Ok(
+            value=length_calc.LengthCalcResult(length=len(data), data=bytes(data))
         )
